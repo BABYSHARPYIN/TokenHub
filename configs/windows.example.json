@@ -1,0 +1,14 @@
+{
+  "role": "windows",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "num_layers": 28,
+  "layer_range": [14, 28],
+  "engine": "mock",
+  "host": "0.0.0.0",
+  "kv_port": 7421,
+  "node_port": 7422,
+  "max_model_len": 512,
+  "transport": "cleartext-http",
+  "encryption": false,
+  "health_timeout_s": 3.0
+}
