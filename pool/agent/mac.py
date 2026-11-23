@@ -13,7 +13,18 @@ from pool.dispatch.dispatcher import Dispatcher
 from pool.dispatch.tokenizer import ByteTokenizer, HuggingFaceTokenizer
 from pool.errors import EngineUnavailable, SessionFailed
 from pool.kv.memory import InMemoryKVStore
-from pool.protocol.constants import FRONT_HALF_WARNING, MODEL_NAME, PROTOCOL
+from pool.protocol.constants import (
+    FRONT_HALF_WARNING,
+    MAC_LAYER_END,
+    MAC_LAYER_START,
+    MODEL_NAME,
+    PROTOCOL,
+    VISION_DEEPSTACK_INDEXES,
+    VISION_DEPTH,
+    VISION_OWNER,
+    WINDOWS_LAYER_END,
+    WINDOWS_LAYER_START,
+)
 from pool.rpc.http import HttpKVClient, HttpLayerClient
 from pool.runtime.mock import MockEmbedder
 from pool.runtime.node import LayerNode, build_mock_mac_node
@@ -41,8 +52,12 @@ class MacApp:
             "model": self.config["model"],
             "engine": self.config["engine"],
             "mode": self.config["mode"],
-            "mac_layers": [0, 14],
-            "windows_layers": [14, 28],
+            "mac_layers": [MAC_LAYER_START, MAC_LAYER_END],
+            "windows_layers": [WINDOWS_LAYER_START, WINDOWS_LAYER_END],
+            "vision_owner": VISION_OWNER,
+            "vision_depth": VISION_DEPTH,
+            "vision_deepstack_indexes": list(VISION_DEEPSTACK_INDEXES),
+            "checkpoint_format": "safetensors",
             "windows_kv": peers["windows_kv"],
             "windows_node": peers["windows_node"],
             "transport": "cleartext-http",
@@ -79,7 +94,7 @@ def build_mac_stack(config: dict | None = None) -> MacApp:
 
         runner = VllmMetalHiddenStateRunner(config["model"], config.get("max_model_len", 512))
         runner.load()
-        mac = LayerNode("mac", 0, 14, runner, lm_head=runner)
+        mac = LayerNode("mac", MAC_LAYER_START, MAC_LAYER_END, runner, lm_head=runner)
         embedder = runner
         tokenizer = HuggingFaceTokenizer(config["model"])
         lm_head = runner

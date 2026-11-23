@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 from pool.errors import LayerRangeError
+from pool.protocol.constants import (
+    MAC_LAYER_END,
+    MAC_LAYER_START,
+    NUM_LAYERS,
+    WINDOWS_LAYER_END,
+    WINDOWS_LAYER_START,
+)
 from pool.protocol.types import ForwardRequest, ForwardResponse, Health
 
 
@@ -20,8 +27,15 @@ class LayerNode:
     ):
         if layer_end <= layer_start:
             raise LayerRangeError("node range is empty")
-        if layer_start == 0 and layer_end >= 28:
-            raise LayerRangeError("a node cannot own the full [0, 28) stack")
+        locked = {
+            (MAC_LAYER_START, MAC_LAYER_END),
+            (WINDOWS_LAYER_START, WINDOWS_LAYER_END),
+        }
+        if (layer_start, layer_end) not in locked:
+            raise LayerRangeError(
+                f"node range [{layer_start}, {layer_end}) is not a locked half "
+                f"of the {NUM_LAYERS}-layer language tower"
+            )
         self.name = name
         self.layer_start = layer_start
         self.layer_end = layer_end
@@ -82,7 +96,7 @@ def build_mock_mac_node(**kwargs) -> LayerNode:
 
     head = kwargs.pop("lm_head", None) or MockLmHead()
     runner = kwargs.pop("runner", None) or MockRunner()
-    return LayerNode("mac", 0, 14, runner, lm_head=head, **kwargs)
+    return LayerNode("mac", MAC_LAYER_START, MAC_LAYER_END, runner, lm_head=head, **kwargs)
 
 
 def build_mock_windows_node(**kwargs) -> LayerNode:
@@ -92,4 +106,4 @@ def build_mock_windows_node(**kwargs) -> LayerNode:
         raise LayerRangeError("Windows mock node cannot own an lm_head")
     runner = kwargs.pop("runner", None) or MockRunner()
     kwargs.pop("lm_head", None)
-    return LayerNode("windows", 14, 28, runner, lm_head=None, **kwargs)
+    return LayerNode("windows", WINDOWS_LAYER_START, WINDOWS_LAYER_END, runner, lm_head=None, **kwargs)

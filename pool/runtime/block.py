@@ -1,4 +1,4 @@
-"""Qwen2 decoder block on plain lists.
+"""Reference language-tower block on plain lists.
 
 This is the reference formula the Metal and CUDA adapters follow: RMSNorm,
 QKV, RoPE, grouped-query attention, residual, SwiGLU. It is the layer-range

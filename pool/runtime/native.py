@@ -1,4 +1,4 @@
-"""Torch and MLX translations of the reference Qwen2 block.
+"""Torch and MLX translations of the reference language-tower block.
 
 Weights stay on the device that loaded them. Activations cross the pool boundary
 as float32 blobs. These functions never call a chat or generate entrypoint.

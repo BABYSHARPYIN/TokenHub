@@ -1,13 +1,26 @@
-"""Pull Qwen2 decoder weights out of a vLLM or MLX module tree.
+"""Pull language-tower decoder weights out of a vLLM or MLX module tree.
 
 The pool then runs a layer range itself. It does not call the engine chat API.
+The vision tower is not a language layer list. Windows callers drop it with
+``drop_vision_module`` after export. Vision execution stays on Mac.
 """
 
 from __future__ import annotations
 
 from pool.errors import EngineUnavailable
-from pool.protocol.constants import ModelSpec
+from pool.protocol.constants import VISION_MODULE_ATTRS, ModelSpec
 from pool.runtime.block import LayerWeights
+
+_ENGINE_CHILDREN = (
+    "model",
+    "llm_engine",
+    "engine_core",
+    "model_executor",
+    "driver_worker",
+    "worker",
+    "model_runner",
+)
+_LANGUAGE_CHILDREN = ("language_model", "text_model")
 
 
 def _weight(module):
@@ -58,7 +71,7 @@ def _split_rows(weight, sizes: list[int]):
             parts.append(weight[cursor : cursor + size])
             cursor += size
         if cursor != len(weight):
-            raise EngineUnavailable("fused weight does not match the Qwen2 head sizes")
+            raise EngineUnavailable("fused weight does not match the language-tower head sizes")
         return parts
     if hasattr(weight, "split") and not type(weight).__module__.startswith("mlx"):
         return list(weight.split(sizes, dim=0))
@@ -77,7 +90,7 @@ def _mlx_split(weight, sizes: list[int]):
         cursor += size
     del mx
     if cursor != int(weight.shape[0]):
-        raise EngineUnavailable("fused MLX weight does not match the Qwen2 head sizes")
+        raise EngineUnavailable("fused MLX weight does not match the language-tower head sizes")
     return parts
 
 
@@ -104,8 +117,20 @@ def looks_like_block(module) -> bool:
     )
 
 
-def find_layer_list(root, depth: int = 6):
-    """Bounded walk used after a vLLM engine has loaded. Does not call generate."""
+def _layer_seq(obj):
+    for name in ("layers", "h", "decoder_layers"):
+        seq = getattr(obj, name, None)
+        if isinstance(seq, (list, tuple)) and seq and looks_like_block(seq[0]):
+            return list(seq)
+    return None
+
+
+def find_layer_list(root, depth: int = 6, expected_len: int | None = None):
+    """Bounded walk used after a vLLM engine has loaded. Does not call generate.
+
+    Prefers ``language_model`` / ``text_model`` over a sibling ``layers`` list so
+    the 27-block vision tower is not exported as the language stack.
+    """
     seen: set[int] = set()
 
     def walk(obj, level: int):
@@ -114,19 +139,16 @@ def find_layer_list(root, depth: int = 6):
         if isinstance(obj, (str, bytes, int, float, bool)):
             return None
         seen.add(id(obj))
-        for name in ("layers", "h", "decoder_layers"):
-            seq = getattr(obj, name, None)
-            if isinstance(seq, (list, tuple)) and seq and looks_like_block(seq[0]):
-                return list(seq)
-        for name in (
-            "model",
-            "llm_engine",
-            "engine_core",
-            "model_executor",
-            "driver_worker",
-            "worker",
-            "model_runner",
-        ):
+        for name in _LANGUAGE_CHILDREN:
+            child = getattr(obj, name, None)
+            if child is not None and child is not obj:
+                found = walk(child, level - 1)
+                if found is not None:
+                    return found
+        local = _layer_seq(obj)
+        if local is not None:
+            return local
+        for name in _ENGINE_CHILDREN:
             if hasattr(obj, name):
                 found = walk(getattr(obj, name), level - 1)
                 if found is not None:
@@ -136,9 +158,68 @@ def find_layer_list(root, depth: int = 6):
     found = walk(root, depth)
     if found is None:
         raise EngineUnavailable(
-            "decoder layers were not found inside the engine; refusing to fall back to chat"
+            "language-tower layers were not found inside the engine; refusing to fall back to chat"
+        )
+    if expected_len is not None and len(found) != expected_len:
+        raise EngineUnavailable(
+            f"model exposes {len(found)} blocks; language tower must be {expected_len}. "
+            "Refusing the vision encoder and refusing to fall back to chat."
         )
     return found
+
+
+def _walk_modules(root, depth: int, visit):
+    seen: set[int] = set()
+
+    def walk(obj, level: int) -> None:
+        if obj is None or level < 0 or id(obj) in seen:
+            return
+        if isinstance(obj, (str, bytes, int, float, bool, list, tuple)):
+            return
+        seen.add(id(obj))
+        visit(obj)
+        for name in _LANGUAGE_CHILDREN + _ENGINE_CHILDREN:
+            if hasattr(obj, name):
+                walk(getattr(obj, name), level - 1)
+
+    walk(root, depth)
+
+
+def find_vision_module(root, depth: int = 6):
+    """Return the vision tower when the engine exposes one. Does not run it."""
+    found = None
+
+    def visit(obj) -> None:
+        nonlocal found
+        if found is not None:
+            return
+        for name in VISION_MODULE_ATTRS:
+            module = getattr(obj, name, None)
+            if module is not None:
+                found = module
+                return
+
+    _walk_modules(root, depth, visit)
+    return found
+
+
+def drop_vision_module(root, depth: int = 6) -> bool:
+    """Detach the vision tower so a Windows process does not keep it."""
+    dropped = False
+
+    def visit(obj) -> None:
+        nonlocal dropped
+        for name in VISION_MODULE_ATTRS:
+            if getattr(obj, name, None) is None:
+                continue
+            try:
+                setattr(obj, name, None)
+            except Exception:
+                continue
+            dropped = True
+
+    _walk_modules(root, depth, visit)
+    return dropped
 
 
 def export_layer(module, spec: ModelSpec) -> LayerWeights:
@@ -199,7 +280,7 @@ def export_layer(module, spec: ModelSpec) -> LayerWeights:
 
 
 def export_range(root, start: int, end: int, spec: ModelSpec) -> list[LayerWeights]:
-    layers = find_layer_list(root)
+    layers = find_layer_list(root, expected_len=spec.num_layers)
     if end > len(layers) or start < 0:
         raise EngineUnavailable(
             f"model exposes {len(layers)} layers; cannot export [{start}, {end})"
@@ -207,12 +288,36 @@ def export_range(root, start: int, end: int, spec: ModelSpec) -> list[LayerWeigh
     return [export_layer(layers[index], spec) for index in range(start, end)]
 
 
+def _language_holder(root):
+    model = getattr(root, "model", None)
+    for owner in (root, model):
+        if owner is None:
+            continue
+        found = _child(owner, "language_model", "text_model")
+        if found is not None:
+            return found
+    return model if model is not None else root
+
+
 def export_head(root, spec: ModelSpec):
-    """Return (embed, final_norm, lm_head) from a causal-LM module. Mac only."""
+    """Return (embed, final_norm, lm_head) from the language tower. Mac only."""
+    language = _language_holder(root)
     model = getattr(root, "model", root)
-    embed = _weight(_child(root, "embed_tokens") or _child(model, "embed_tokens"))
-    norm = _weight(_child(model, "norm") or _child(root, "norm"))
-    head = _weight(_child(root, "lm_head") or _child(model, "lm_head"))
+    embed = _weight(
+        _child(language, "embed_tokens")
+        or _child(root, "embed_tokens")
+        or _child(model, "embed_tokens")
+    )
+    norm = _weight(
+        _child(language, "norm")
+        or _child(model, "norm")
+        or _child(root, "norm")
+    )
+    head = _weight(
+        _child(root, "lm_head")
+        or _child(model, "lm_head")
+        or _child(language, "lm_head")
+    )
     if embed is None or norm is None or head is None:
         raise EngineUnavailable("Mac runner requires embed_tokens, final norm, and lm_head")
     embed_rows = _as_rows(embed, spec.vocab_size)

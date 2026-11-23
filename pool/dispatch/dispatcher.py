@@ -1,4 +1,10 @@
-"""Schedule a session across Mac [0, 14) and, when reachable, Windows [14, 28)."""
+"""Schedule a session across Mac language layers [0, 18) and, when reachable, Windows [18, 36).
+
+Dual prefill and decode both use that even split. Single-mac prefill and decode
+stay on the front half and ask Mac for logits. Neither path runs the full
+language tower on Mac, and neither path sends the prompt to a chat API.
+Vision encoding is not part of this loop; it stays on Mac.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +20,8 @@ from pool.protocol.constants import (
     DEGRADED_FRONT_HALF,
     FRONT_HALF_WARNING,
     HEALTH_TIMEOUT_S,
+    MAC_LAYER_END,
+    MAC_LAYER_START,
     WINDOWS_LAYER_END,
     WINDOWS_LAYER_START,
     assert_locked_split,
@@ -55,8 +63,10 @@ class Dispatcher:
         self.windows_worker = windows_worker
         self.windows_kv = windows_kv
         self.health_timeout_s = health_timeout_s
-        if (mac_worker.layer_start, mac_worker.layer_end) != (0, 14):
-            raise LayerRangeError("dispatcher requires a Mac node locked to [0, 14)")
+        if (mac_worker.layer_start, mac_worker.layer_end) != (MAC_LAYER_START, MAC_LAYER_END):
+            raise LayerRangeError(
+                f"dispatcher requires a Mac node locked to [{MAC_LAYER_START}, {MAC_LAYER_END})"
+            )
 
     def generate(self, prompt: str, *, mode: str = "auto", max_new_tokens: int = 32) -> GenerateResult:
         if not isinstance(prompt, str) or prompt == "":
@@ -193,12 +203,12 @@ class Dispatcher:
         return result
 
     def _step(self, decision, session_id, phase, hidden, position_start, seq_len, prompt):
-        past_keys, past_values = decision.kv.read(session_id, 0, 14)
+        past_keys, past_values = decision.kv.read(session_id, MAC_LAYER_START, MAC_LAYER_END)
         mac_request = ForwardRequest(
             session_id=session_id,
             phase=phase,
-            layer_start=0,
-            layer_end=14,
+            layer_start=MAC_LAYER_START,
+            layer_end=MAC_LAYER_END,
             position_start=position_start,
             seq_len=seq_len,
             hidden=hidden,
@@ -207,22 +217,24 @@ class Dispatcher:
             past_values=past_values,
         )
         mac_response = self.mac_worker.forward(mac_request)
-        if (mac_response.layer_start, mac_response.layer_end) != (0, 14):
-            raise LayerRangeError("Mac response was not [0, 14)")
+        if (mac_response.layer_start, mac_response.layer_end) != (MAC_LAYER_START, MAC_LAYER_END):
+            raise LayerRangeError(
+                f"Mac response was not [{MAC_LAYER_START}, {MAC_LAYER_END})"
+            )
         self._append(decision, session_id, mac_response, position_start, prompt)
         if decision.kind == "single-mac":
             if mac_response.logits is None:
                 raise SessionFailed(
-                    "front-half path did not return logits from Mac [0, 14)",
+                    f"front-half path did not return logits from Mac [{MAC_LAYER_START}, {MAC_LAYER_END})",
                     code="no_logits",
                 )
             return mac_response.hidden, mac_response.logits
-        past_keys, past_values = decision.kv.read(session_id, 14, 28)
+        past_keys, past_values = decision.kv.read(session_id, WINDOWS_LAYER_START, WINDOWS_LAYER_END)
         windows_request = ForwardRequest(
             session_id=session_id,
             phase=phase,
-            layer_start=14,
-            layer_end=28,
+            layer_start=WINDOWS_LAYER_START,
+            layer_end=WINDOWS_LAYER_END,
             position_start=position_start,
             seq_len=seq_len,
             hidden=mac_response.hidden,
@@ -237,8 +249,13 @@ class Dispatcher:
             raise
         except Exception as exc:
             raise RemoteFailure(str(exc)) from exc
-        if (windows_response.layer_start, windows_response.layer_end) != (14, 28):
-            raise LayerRangeError("Windows response was not [14, 28)")
+        if (windows_response.layer_start, windows_response.layer_end) != (
+            WINDOWS_LAYER_START,
+            WINDOWS_LAYER_END,
+        ):
+            raise LayerRangeError(
+                f"Windows response was not [{WINDOWS_LAYER_START}, {WINDOWS_LAYER_END})"
+            )
         self._append(decision, session_id, windows_response, position_start, prompt)
         return windows_response.hidden, self.lm_head.apply(windows_response.hidden)
 

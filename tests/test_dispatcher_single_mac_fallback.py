@@ -17,14 +17,14 @@ def _assert_front_half(result, mac, windows, local_kv, windows_kv):
     assert result.answer
     assert windows.seen == []
     assert mac.seen, "Mac did not run"
-    assert any(item["phase"] == "prefill" and (item["layer_start"], item["layer_end"]) == (0, 14) for item in mac.seen)
-    assert all((item["layer_start"], item["layer_end"]) == (0, 14) for item in mac.seen)
+    assert any(item["phase"] == "prefill" and (item["layer_start"], item["layer_end"]) == (0, 18) for item in mac.seen)
+    assert all((item["layer_start"], item["layer_end"]) == (0, 18) for item in mac.seen)
     assert all(item["return_logits"] is True for item in mac.seen)
-    assert not any(item["layer_start"] == 0 and item["layer_end"] >= 28 for item in mac.seen)
+    assert not any(item["layer_start"] == 0 and item["layer_end"] >= 36 for item in mac.seen)
     assert windows_kv.writes == []
     assert windows_kv.sessions == {}
     assert local_kv.writes
-    assert all((item[1], item[2]) == (0, 14) for item in local_kv.writes)
+    assert all((item[1], item[2]) == (0, 18) for item in local_kv.writes)
     assert any(item[3] == 0 for item in local_kv.writes)
 
 
@@ -57,23 +57,30 @@ def test_dual_windows_down_fails():
     assert windows_kv.writes == []
 
 
-def test_wrong_windows_range_is_not_a_dual_peer():
+def _wrong_range_peer(layer_start: int, layer_end: int):
     class WrongRange:
         seen: list = []
 
         def health(self, timeout: float = 3.0):
             del timeout
-            return Health(ok=True, role="windows", layer_start=0, layer_end=28)
+            return Health(ok=True, role="windows", layer_start=layer_start, layer_end=layer_end)
 
         def forward(self, request):
-            raise AssertionError(f"forwarded to a full-depth peer: {request}")
+            raise AssertionError(f"forwarded to a peer outside [18, 36): {request}")
 
-    dispatcher, mac, windows, local_kv, windows_kv = make_dispatcher(windows_worker=WrongRange())
-    result = dispatcher.generate(SENTINEL, mode="auto", max_new_tokens=2)
-    _assert_front_half(result, mac, windows, local_kv, windows_kv)
-    with pytest.raises(SessionFailed) as caught:
-        dispatcher.generate(SENTINEL, mode="dual", max_new_tokens=2)
-    assert caught.value.code == "windows_unreachable"
+    return WrongRange()
+
+
+def test_wrong_windows_range_is_not_a_dual_peer():
+    for layer_start, layer_end in ((0, 36), (14, 14 + 14)):
+        dispatcher, mac, windows, local_kv, windows_kv = make_dispatcher(
+            windows_worker=_wrong_range_peer(layer_start, layer_end),
+        )
+        result = dispatcher.generate(SENTINEL, mode="auto", max_new_tokens=2)
+        _assert_front_half(result, mac, windows, local_kv, windows_kv)
+        with pytest.raises(SessionFailed) as caught:
+            dispatcher.generate(SENTINEL, mode="dual", max_new_tokens=2)
+        assert caught.value.code == "windows_unreachable"
 
 
 def test_dual_mid_session_drop_fails_and_cleans_kv():
@@ -85,7 +92,7 @@ def test_dual_mid_session_drop_fails_and_cleans_kv():
     assert len(windows.seen) == 1
     assert windows.seen[0]["phase"] == "prefill"
     assert len(mac.seen) == 2
-    assert all((item["layer_start"], item["layer_end"]) == (0, 14) for item in mac.seen)
+    assert all((item["layer_start"], item["layer_end"]) == (0, 18) for item in mac.seen)
     assert windows_kv.sessions == {}
     assert windows_kv.deleted
     assert local_kv.writes == []
@@ -98,7 +105,7 @@ def test_health_timeout_falls_back_without_hanging():
         def health(self, timeout: float = 3.0):
             del timeout
             time.sleep(1.5)
-            return Health(ok=True, role="windows", layer_start=14, layer_end=28)
+            return Health(ok=True, role="windows", layer_start=18, layer_end=36)
 
         def forward(self, request):
             raise AssertionError("slow node should not receive a forward")

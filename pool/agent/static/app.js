@@ -17,9 +17,11 @@ function paintPeer(node, ok, label) {
 async function refresh() {
   const response = await fetch("/api/status");
   const status = await response.json();
-  macMeta.textContent = `${status.engine} · ${status.model} · mode default ${status.mode}`;
+  const win = status.windows_layers || [];
+  const nodeLabel = win.length === 2 ? `node [${win[0]}, ${win[1]})` : "node";
+  macMeta.textContent = `${status.engine} · ${status.model} · vision ${status.vision_owner || "mac"} · mode default ${status.mode}`;
   paintPeer(kvState, status.windows_kv === "up", "KV");
-  paintPeer(nodeState, status.windows_node === "up", "node [14, 28)");
+  paintPeer(nodeState, status.windows_node === "up", nodeLabel);
 }
 
 form.addEventListener("submit", async (event) => {

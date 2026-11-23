@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pool.config import windows_config
 from pool.errors import EngineUnavailable
+from pool.protocol.constants import WINDOWS_LAYER_END, WINDOWS_LAYER_START
 from pool.kv.memory import InMemoryKVStore
 from pool.rpc.http import KVApp, NodeApp, serve_in_thread
 from pool.runtime.node import LayerNode, build_mock_windows_node
@@ -21,7 +22,7 @@ def build_windows_node(config: dict):
 
         runner = VllmCudaHiddenStateRunner(config["model"], config.get("max_model_len", 512))
         runner.load()
-        return LayerNode("windows", 14, 28, runner, lm_head=None)
+        return LayerNode("windows", WINDOWS_LAYER_START, WINDOWS_LAYER_END, runner, lm_head=None)
     raise EngineUnavailable("Windows agent accepts mock or vllm-cuda")
 
 

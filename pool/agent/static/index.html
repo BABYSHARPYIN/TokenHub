@@ -3,16 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>共享分层推理计算池</title>
+  <title>TokenHub</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="top">
     <div>
-      <p class="kicker">pool · cleartext layer rpc</p>
-      <h1>共享分层推理计算池</h1>
-      <p class="lede">量化 7B，默认 Qwen2.5-7B-Instruct，28 层对半。Mac 跑 [0, 14)，Windows 跑 [14, 28)。浏览器只下发请求，不跑层计算。</p>
-      <p class="lede">模式 auto 会用约 3 秒检查 Windows。不可达或 single-mac 时进入前半层冒烟（mac_front_half）：只跑 Mac 层 [0, 14)，输出质量不计。dual 在 Windows 掉线时直接失败，不会中途改跑前半层。</p>
+      <p class="kicker">TokenHub · cleartext layer rpc</p>
+      <h1>TokenHub</h1>
+      <p class="lede">共享分层推理计算池。</p>
+      <p class="lede">默认 Qwen/Qwen3-VL-8B-Instruct（Hugging Face safetensors，不是 GGUF）。语言塔 36 层对半：Mac 跑 [0, 18)，Windows 跑 [18, 36)。视觉塔是 27 层 ViT，DeepStack 索引 8/16/24，和分词、明文一起留在 Mac。浏览器只下发请求，不跑层计算。</p>
+      <p class="lede">模式 auto 会用约 3 秒检查 Windows。不可达或 single-mac 时进入前半层冒烟（mac_front_half）：Prefill 和 decode 都只跑 Mac 语言层 [0, 18)，输出质量不计。不会为了质量跑满 36 层。dual 在 Windows 掉线时直接失败，不会中途改跑前半层。</p>
     </div>
     <p class="transport" id="transport">隐状态走公网明文 RPC，没有加密。</p>
   </header>
@@ -21,8 +22,8 @@
     <section class="rail" aria-label="节点状态">
       <article>
         <h2>Mac Node</h2>
-        <p class="range">layers [0, 14)</p>
-        <p class="meta" id="mac-meta">分词、embedding、lm_head、采样留在本机</p>
+        <p class="range">layers [0, 18)</p>
+        <p class="meta" id="mac-meta">分词、视觉编码、embedding、lm_head、采样留在本机</p>
       </article>
       <article>
         <h2>Windows KV</h2>
@@ -44,7 +45,7 @@
           <label><input type="radio" name="mode" value="dual"> dual</label>
         </div>
         <label class="prompt-label" for="prompt">问题</label>
-        <textarea id="prompt" name="prompt" rows="5" required placeholder="问一个需要完整 28 层才能当真的问题。Windows 不可达时，这里只会得到前半层冒烟。"></textarea>
+        <textarea id="prompt" name="prompt" rows="5" required placeholder="问一个需要完整 36 层语言塔才能当真的问题。Windows 不可达时，这里只会得到前半层冒烟。"></textarea>
         <div class="row">
           <label>新 token 上限 <input id="limit" type="number" min="1" max="256" value="24"></label>
           <button type="submit" id="send">发送到本机调度</button>

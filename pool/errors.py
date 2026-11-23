@@ -1,5 +1,5 @@
 class PoolError(Exception):
-    """Base error for the layered pool."""
+    """Base error for TokenHub."""
 
 
 class SessionFailed(PoolError):

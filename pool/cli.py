@@ -1,4 +1,4 @@
-"""Start the Mac console agent or the Windows KV + layer agent."""
+"""Start the TokenHub Mac console or the Windows KV + layer agent."""
 
 from __future__ import annotations
 
@@ -6,10 +6,14 @@ import argparse
 import threading
 
 from pool.config import load_config, mac_config, windows_config
+from pool.protocol.constants import WINDOWS_LAYER_END, WINDOWS_LAYER_START
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="pool", description="共享分层推理计算池 local agent")
+    parser = argparse.ArgumentParser(
+        prog="tokenhub",
+        description="TokenHub local agent。共享分层推理计算池。",
+    )
     parser.add_argument("--role", choices=["mac", "windows"], required=True)
     parser.add_argument("--engine", choices=["mock", "vllm-metal", "vllm-cuda"])
     parser.add_argument("--config")
@@ -35,7 +39,7 @@ def main(argv: list[str] | None = None) -> None:
 
         server = serve_mac(config)
         host, port = server.server_address[:2]
-        print(f"Mac console http://{host}:{port} engine={config['engine']} mode={config['mode']}")
+        print(f"TokenHub Mac console http://{host}:{port} engine={config['engine']} mode={config['mode']}")
         print("Hidden states travel in the clear. Front-half smoke quality does not count.")
         try:
             server.serve_forever()
@@ -52,8 +56,11 @@ def main(argv: list[str] | None = None) -> None:
     kv_server, node_server, _store, _node = serve_windows(config)
     kv_host, kv_port = kv_server.server_address[:2]
     node_host, node_port = node_server.server_address[:2]
-    print(f"Windows KV  http://{kv_host}:{kv_port}  (cleartext)")
-    print(f"Windows Node http://{node_host}:{node_port}  layers [14, 28)")
+    print(f"TokenHub Windows KV  http://{kv_host}:{kv_port}  (cleartext)")
+    print(
+        f"TokenHub Windows Node http://{node_host}:{node_port}  "
+        f"layers [{WINDOWS_LAYER_START}, {WINDOWS_LAYER_END})"
+    )
     print("This process does not tokenize or emit plaintext.")
     try:
         threading.Event().wait()
