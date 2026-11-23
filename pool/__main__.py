@@ -1,4 +1,4 @@
-"""Package entry. Start TokenHub with the `tokenhub` console script."""
+"""Package entry. Start TokenHub with `python -m pool`."""
 
 from pool.cli import main
 

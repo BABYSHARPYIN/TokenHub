@@ -1,6 +1,6 @@
 # TokenHub
 
-TokenHub 是共享分层推理计算池，仓库名是 BABYSHARPYIN/TokenHub。安装用的发行名是 `tokenhub`，启动命令是 `tokenhub`。Python 导入包仍是 `pool`。
+TokenHub 是共享分层推理计算池，仓库名是 BABYSHARPYIN/TokenHub。安装用的发行名是 `tokenhub`。Python 导入包是 `pool`，启动命令是 `python -m pool`。
 
 默认且唯一的演示模型是 Hugging Face safetensors 检查点 **Qwen/Qwen3-VL-8B-Instruct**（`Qwen3VLForConditionalGeneration`）。这不是 GGUF 仓库 `Qwen/Qwen3-VL-8B-Instruct-GGUF`，也没有 llama.cpp 路径。
 
@@ -26,7 +26,7 @@ mock 引擎（不加载权重，用来验证控制台和前半层降级）：
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-tokenhub --role mac --engine mock --host 127.0.0.1 --port 7410 --mode auto
+python -m pool --role mac --engine mock --host 127.0.0.1 --port 7410 --mode auto
 ```
 
 打开 http://127.0.0.1:7410 。模式保持 `auto`，或改成 `single-mac`，然后提交一个问题。
@@ -48,7 +48,7 @@ mock 引擎产出的 token 只是 UTF-8 占位，不是 Qwen 词表。上面的�
 
 ```bash
 pip install -e ".[metal]"
-tokenhub --role mac --engine vllm-metal --model Qwen/Qwen3-VL-8B-Instruct \
+python -m pool --role mac --engine vllm-metal --model Qwen/Qwen3-VL-8B-Instruct \
   --host 127.0.0.1 --port 7410 --mode auto --max-model-len 512
 ```
 
@@ -63,7 +63,7 @@ Windows 的 Node 和 KV 跑在 WSL2 里，以便 CUDA vLLM 能用到 NVIDIA 显�
 在 Windows / WSL2 上：
 
 ```bash
-tokenhub --role windows --engine vllm-cuda \
+python -m pool --role windows --engine vllm-cuda \
   --model Qwen/Qwen3-VL-8B-Instruct \
   --host 0.0.0.0 --kv-port 7421 --node-port 7422 \
   --max-model-len 512
@@ -74,7 +74,7 @@ tokenhub --role windows --engine vllm-cuda \
 在 Mac 上：
 
 ```bash
-tokenhub --role mac --engine vllm-metal \
+python -m pool --role mac --engine vllm-metal \
   --model Qwen/Qwen3-VL-8B-Instruct \
   --host 127.0.0.1 --port 7410 --mode auto \
   --windows-kv http://WINDOWS_PUBLIC_IP:7421 \
