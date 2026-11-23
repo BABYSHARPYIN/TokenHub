@@ -32,6 +32,28 @@ from pool.runtime.vllm_metal import VllmMetalHiddenStateRunner
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_distribution_name_is_tokenhub():
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'name = "tokenhub"' in text
+    assert "layered inference pool" not in text
+    assert 'name = "pool"' not in text
+
+
+def test_cli_help_uses_tokenhub():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pool", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert "usage: tokenhub" in result.stdout
+    assert "TokenHub" in result.stdout
+
+
 def test_locked_split_and_configs():
     assert_locked_split()
     mac = load_config(ROOT / "configs" / "mac.example.json")

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pool"
+name = "tokenhub"
 version = "0.1.0"
-description = "共享分层推理计算池 — cleartext layered inference pool (v1)"
+description = "TokenHub — 共享分层推理计算池 (v1)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
@@ -16,7 +16,7 @@ metal = ["vllm", "mlx", "mlx-lm", "transformers"]
 cuda = ["vllm", "torch", "transformers"]
 
 [project.scripts]
-pool = "pool.cli:main"
+tokenhub = "pool.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["pool*"]

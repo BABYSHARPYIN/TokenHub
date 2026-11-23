@@ -1,6 +1,6 @@
-# 共享分层推理计算池
+# TokenHub
 
-第一版分层推理计算池。Python 包名是 `pool`。
+TokenHub 是共享分层推理计算池，仓库名是 BABYSHARPYIN/TokenHub。安装用的发行名是 `tokenhub`。Python 导入包仍是 `pool`，所以下面的命令继续用 `python -m pool`。
 
 默认且唯一的演示模型是 Hugging Face safetensors 检查点 **Qwen/Qwen3-VL-8B-Instruct**（`Qwen3VLForConditionalGeneration`）。这不是 GGUF 仓库 `Qwen/Qwen3-VL-8B-Instruct-GGUF`，也没有 llama.cpp 路径。
 

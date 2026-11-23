@@ -1,4 +1,6 @@
-"""共享分层推理计算池 (package name: pool).
+"""TokenHub. The import package stays `pool`; the distribution name is `tokenhub`.
+
+This process is a 共享分层推理计算池.
 
 v1 splits Qwen/Qwen3-VL-8B-Instruct language layers into Mac [0, 18) and Windows [18, 36).
 The vision tower stays on Mac. The checkpoint is Hugging Face safetensors.

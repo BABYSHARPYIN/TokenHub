@@ -60,6 +60,7 @@ def test_console_front_half_and_dual_failure():
     base = f"http://127.0.0.1:{port}"
     with request.urlopen(base + "/", timeout=3) as response:
         page = response.read().decode("utf-8")
+    assert "TokenHub" in page
     assert "共享分层推理计算池" in page
     assert "Qwen/Qwen3-VL-8B-Instruct" in page
     assert "[0, 18)" in page
