@@ -61,7 +61,21 @@ def test_console_front_half_and_dual_failure():
     with request.urlopen(base + "/", timeout=3) as response:
         page = response.read().decode("utf-8")
     assert "共享分层推理计算池" in page
+    assert "Qwen/Qwen3-VL-8B-Instruct" in page
+    assert "[0, 18)" in page
+    assert "[18, 36)" in page
+    assert "视觉" in page
+    assert "27" in page
     assert "质量不计" in page or "mac_front_half" in page
+    assert "Qwen2.5-" + "7B" not in page
+    with request.urlopen(base + "/api/status", timeout=3) as response:
+        status = json.loads(response.read().decode("utf-8"))
+    assert status["model"] == "Qwen/Qwen3-VL-8B-Instruct"
+    assert status["mac_layers"] == [0, 18]
+    assert status["windows_layers"] == [18, 36]
+    assert status["vision_owner"] == "mac"
+    assert status["vision_depth"] == 27
+    assert status["vision_deepstack_indexes"] == [8, 16, 24]
     payload = json.dumps(
         {"prompt": SENTINEL, "mode": "auto", "max_new_tokens": 2},
     ).encode("utf-8")

@@ -6,6 +6,7 @@ import argparse
 import threading
 
 from pool.config import load_config, mac_config, windows_config
+from pool.protocol.constants import WINDOWS_LAYER_END, WINDOWS_LAYER_START
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -53,7 +54,10 @@ def main(argv: list[str] | None = None) -> None:
     kv_host, kv_port = kv_server.server_address[:2]
     node_host, node_port = node_server.server_address[:2]
     print(f"Windows KV  http://{kv_host}:{kv_port}  (cleartext)")
-    print(f"Windows Node http://{node_host}:{node_port}  layers [14, 28)")
+    print(
+        f"Windows Node http://{node_host}:{node_port}  "
+        f"layers [{WINDOWS_LAYER_START}, {WINDOWS_LAYER_END})"
+    )
     print("This process does not tokenize or emit plaintext.")
     try:
         threading.Event().wait()

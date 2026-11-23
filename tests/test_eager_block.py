@@ -1,6 +1,7 @@
+from pool.errors import EngineUnavailable
 from pool.protocol.constants import ModelSpec
 from pool.runtime.block import LayerWeights, apply_lm_head_list, forward_layers_list
-from pool.runtime.extract import export_layer, find_layer_list
+from pool.runtime.extract import drop_vision_module, export_head, export_layer, find_layer_list
 
 
 def _spec() -> ModelSpec:
@@ -124,6 +125,73 @@ def test_extract_unfused_and_fused_qkv():
 
     found = find_layer_list(Root())
     assert len(found) == 2
+
+
+def test_language_tower_is_not_the_vision_encoder():
+    class Block:
+        def __init__(self, tag: str):
+            self.tag = tag
+            self.self_attn = tag
+            self.mlp = tag
+
+    class Language:
+        def __init__(self):
+            self.layers = [Block("language") for _ in range(36)]
+            self.embed_tokens = [[float(token)] * 4 for token in range(5)]
+            self.norm = [1.0] * 4
+
+    class Vision:
+        def __init__(self):
+            self.blocks = [Block("vision") for _ in range(27)]
+            self.embed_tokens = [[9.0] * 4]
+
+    class Model:
+        def __init__(self):
+            self.visual = Vision()
+            self.language_model = Language()
+
+    class Root:
+        def __init__(self):
+            self.model = Model()
+            self.lm_head = [[0.1] * 4 for _ in range(5)]
+
+    root = Root()
+    found = find_layer_list(root, expected_len=36)
+    assert len(found) == 36
+    assert all(block.tag == "language" for block in found)
+    assert all(block.tag == "vision" for block in root.model.visual.blocks)
+
+    class VisionOnly:
+        def __init__(self):
+            self.visual = Vision()
+
+    try:
+        find_layer_list(VisionOnly(), expected_len=36)
+    except EngineUnavailable:
+        pass
+    else:
+        raise AssertionError("vision blocks were accepted as the language tower")
+
+    spec = ModelSpec(
+        name="tiny-vl",
+        num_layers=36,
+        hidden_size=4,
+        n_heads=2,
+        n_kv_heads=1,
+        head_dim=2,
+        intermediate=4,
+        vocab_size=5,
+        rms_norm_eps=1e-6,
+        rope_theta=10000.0,
+        eos_token_id=0,
+    )
+    embed, norm, head = export_head(root, spec)
+    assert embed[0][0] == 0.0
+    assert norm == [1.0, 1.0, 1.0, 1.0]
+    assert len(head) == 5
+    assert drop_vision_module(root) is True
+    assert root.model.visual is None
+    assert len(root.model.language_model.layers) == 36
 
 
 def test_lm_head_uses_last_row_only():

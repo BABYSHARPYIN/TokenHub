@@ -10,7 +10,7 @@ def _assert_windows_has_no_plaintext(payloads: list[dict]) -> None:
         scrubbed = json.dumps(scrub_tensors(payload), ensure_ascii=False)
         assert SENTINEL not in scrubbed
         assert payload["return_logits"] is False
-        assert (payload["layer_start"], payload["layer_end"]) == (14, 28)
+        assert (payload["layer_start"], payload["layer_end"]) == (18, 36)
         assert payload["phase"] in {"prefill", "decode"}
         assert "prompt" not in payload
         assert "input_ids" not in payload
@@ -31,12 +31,12 @@ def test_auto_dual_mock_loop_hides_plaintext():
     _assert_windows_has_no_plaintext(windows.seen)
     assert any(item["phase"] == "prefill" for item in windows.seen)
     assert any(item["phase"] == "decode" for item in windows.seen)
-    assert all(item["layer_start"] == 0 and item["layer_end"] == 14 for item in mac.seen)
+    assert all(item["layer_start"] == 0 and item["layer_end"] == 18 for item in mac.seen)
     assert all(item["return_logits"] is False for item in mac.seen)
-    assert not any(item["layer_end"] >= 28 and item["layer_start"] == 0 for item in mac.seen)
+    assert not any(item["layer_end"] >= 36 and item["layer_start"] == 0 for item in mac.seen)
     assert local_kv.writes == []
-    assert any(item[1:] == (0, 14, 0) for item in windows_kv.writes)
-    assert any(item[1:] == (14, 28, 0) for item in windows_kv.writes)
+    assert any(item[1:] == (0, 18, 0) for item in windows_kv.writes)
+    assert any(item[1:] == (18, 36, 0) for item in windows_kv.writes)
     assert windows_kv.sessions == {}
     assert result.session_id in windows_kv.deleted
 

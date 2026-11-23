@@ -17,10 +17,11 @@ from pool.runtime.native import apply_lm_head_mlx, apply_lm_head_torch, forward_
 
 
 class HiddenStateRunner:
-    """Hooks model internals for one half of the 28-layer stack.
+    """Hooks model internals for one half of the 36-layer language tower.
 
-    `role="mac"` is layers [0, 14) plus embeddings and lm_head.
-    `role="windows"` is layers [14, 28) and refuses embed, logits, and text.
+    `role="mac"` is language layers [0, 18) plus embeddings and lm_head.
+    The vision tower, when the engine exposes it, also stays on this process.
+    `role="windows"` is language layers [18, 36) and refuses embed, logits, vision, and text.
     """
 
     def __init__(self, role: str, spec: ModelSpec | None = None):

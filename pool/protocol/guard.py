@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 from pool.errors import LayerRangeError, PlaintextLeak
-from pool.protocol.constants import PROTOCOL
+from pool.protocol.constants import NUM_LAYERS, PROTOCOL, WINDOWS_LAYER_END, WINDOWS_LAYER_START
 
 _SESSION = re.compile(r"^[a-f0-9]{32}$")
 _TENSOR_KEYS = {"dtype", "shape", "data_b64"}
@@ -87,8 +87,8 @@ def assert_activation_payload(payload: dict) -> None:
         raise PlaintextLeak("phase must be prefill or decode")
     if payload["layer_end"] <= payload["layer_start"]:
         raise LayerRangeError("empty layer range")
-    if payload["layer_start"] == 0 and payload["layer_end"] >= 28:
-        raise LayerRangeError("refusing a full-depth [0, 28) forward")
+    if payload["layer_start"] == 0 and payload["layer_end"] >= NUM_LAYERS:
+        raise LayerRangeError(f"refusing a full-depth [0, {NUM_LAYERS}) forward")
 
 
 def assert_windows_request(payload: dict, prompt: str) -> None:
@@ -96,8 +96,10 @@ def assert_windows_request(payload: dict, prompt: str) -> None:
     assert_activation_payload(payload)
     if payload["return_logits"]:
         raise PlaintextLeak("Windows cannot be asked for logits")
-    if payload["layer_start"] != 14 or payload["layer_end"] != 28:
-        raise LayerRangeError("Windows node only accepts layers [14, 28)")
+    if payload["layer_start"] != WINDOWS_LAYER_START or payload["layer_end"] != WINDOWS_LAYER_END:
+        raise LayerRangeError(
+            f"Windows node only accepts layers [{WINDOWS_LAYER_START}, {WINDOWS_LAYER_END})"
+        )
     _reject_prompt(payload, prompt)
 
 
