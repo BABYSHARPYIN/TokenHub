@@ -28,6 +28,7 @@ class MockRunner:
     def __init__(self, hidden_size: int = 8, kv_dim: int = 4):
         self.hidden_size = hidden_size
         self.kv_dim = kv_dim
+        self.calls: list[tuple[int, int]] = []
 
     def forward(
         self,
@@ -39,6 +40,9 @@ class MockRunner:
         position_start: int,
     ) -> tuple[TensorBlob, TensorBlob, TensorBlob]:
         del past_keys, past_values
+        self.calls.append((layer_start, layer_end))
+        if layer_start == 0 and layer_end >= 36:
+            raise RuntimeError("mock engine refuses a full-tower forward")
         rows = hidden.nested()
         shift = (layer_end - layer_start) / 1000.0 + layer_start / 10000.0
         out = [[value + shift for value in row] for row in rows]

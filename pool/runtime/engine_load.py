@@ -17,12 +17,23 @@ def prepare_inprocess_engine() -> None:
     os.environ.setdefault("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
 
 
-def construct_engine(model_name: str, max_model_len: int):
+def construct_engine(
+    model_name: str,
+    max_model_len: int,
+    *,
+    cpu_offload_gb: float = 0.0,
+    swap_space: float | None = None,
+):
     prepare_inprocess_engine()
     try:
         from vllm import LLM
     except Exception as exc:
         raise EngineUnavailable("vLLM is not installed") from exc
+    offload = {}
+    if cpu_offload_gb and cpu_offload_gb > 0:
+        offload["cpu_offload_gb"] = cpu_offload_gb
+    if swap_space and swap_space > 0:
+        offload["swap_space"] = swap_space
     attempts = [
         {
             "model": model_name,
@@ -30,14 +41,16 @@ def construct_engine(model_name: str, max_model_len: int):
             "enforce_eager": True,
             "max_model_len": max_model_len,
             "trust_remote_code": True,
+            **offload,
         },
         {
             "model": model_name,
             "skip_tokenizer_init": True,
             "enforce_eager": True,
             "trust_remote_code": True,
+            **offload,
         },
-        {"model": model_name, "enforce_eager": True, "trust_remote_code": True},
+        {"model": model_name, "enforce_eager": True, "trust_remote_code": True, **offload},
     ]
     last_error: Exception | None = None
     for kwargs in attempts:
@@ -48,6 +61,10 @@ def construct_engine(model_name: str, max_model_len: int):
             continue
         seal_text_entrypoints(engine)
         return engine
+    if offload:
+        raise EngineUnavailable(
+            "vLLM rejected cpu_offload_gb or swap_space; refusing to load the shard without offload"
+        )
     raise EngineUnavailable(f"unable to construct vLLM: {last_error}")
 
 

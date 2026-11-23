@@ -83,8 +83,8 @@ def test_locked_split_and_configs():
     assert VISION_OWNER == "mac"
     assert VISION_DEPTH == 27
     assert VISION_DEEPSTACK_INDEXES == (8, 16, 24)
-    assert mac["layer_range"] == [0, 18]
-    assert windows["layer_range"] == [18, 36]
+    assert "layer_range" not in mac and "layer_range" not in windows
+    assert mac["offload"] == windows["offload"] == "auto"
     assert mac["num_layers"] == windows["num_layers"] == 36
     assert mac["model"] == windows["model"] == MODEL_NAME
     assert mac["checkpoint_format"] == windows["checkpoint_format"] == "safetensors"

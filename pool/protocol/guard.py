@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 from pool.errors import LayerRangeError, PlaintextLeak
-from pool.protocol.constants import NUM_LAYERS, PROTOCOL, WINDOWS_LAYER_END, WINDOWS_LAYER_START
+from pool.protocol.constants import NUM_LAYERS, PROTOCOL
 
 _SESSION = re.compile(r"^[a-f0-9]{32}$")
 _TENSOR_KEYS = {"dtype", "shape", "data_b64"}
@@ -96,10 +96,8 @@ def assert_windows_request(payload: dict, prompt: str) -> None:
     assert_activation_payload(payload)
     if payload["return_logits"]:
         raise PlaintextLeak("Windows cannot be asked for logits")
-    if payload["layer_start"] != WINDOWS_LAYER_START or payload["layer_end"] != WINDOWS_LAYER_END:
-        raise LayerRangeError(
-            f"Windows node only accepts layers [{WINDOWS_LAYER_START}, {WINDOWS_LAYER_END})"
-        )
+    if payload["layer_start"] < 0 or payload["layer_end"] > NUM_LAYERS:
+        raise LayerRangeError("remote hop is outside the language tower")
     _reject_prompt(payload, prompt)
 
 

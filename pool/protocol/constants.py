@@ -4,8 +4,8 @@ The checkpoint is the Hugging Face safetensors repo
 Qwen/Qwen3-VL-8B-Instruct (Qwen3VLForConditionalGeneration).
 It is not Qwen/Qwen3-VL-8B-Instruct-GGUF and it is not a llama.cpp build.
 
-The language tower has 36 layers, split evenly:
-Mac owns [0, 18). Windows owns [18, 36).
+The language tower has 36 layers. [0, 18) / [18, 36) is the reference
+even split for two similar nodes, not the only legal assignment.
 The vision tower is a 27-depth ViT with DeepStack indexes 8/16/24.
 Vision stays on Mac with the tokenizer, embeddings, lm_head, and plaintext.
 """

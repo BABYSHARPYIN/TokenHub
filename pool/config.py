@@ -1,4 +1,4 @@
-"""Example-config checks. v1 rejects other models, uneven splits, and encryption."""
+"""Example-config checks. v1 rejects other models, a configured layer cut, and encryption."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from pool.protocol.constants import (
     HEALTH_TIMEOUT_S,
     HIDDEN_SIZE,
     INTERMEDIATE_SIZE,
-    MAC_LAYER_END,
-    MAC_LAYER_START,
     MODEL_NAME,
     N_HEADS,
     N_KV_HEADS,
@@ -22,13 +20,8 @@ from pool.protocol.constants import (
     VISION_DEPTH,
     VISION_OWNER,
     VOCAB_SIZE,
-    WINDOWS_LAYER_END,
-    WINDOWS_LAYER_START,
     assert_locked_split,
 )
-
-MAC_RANGE = [MAC_LAYER_START, MAC_LAYER_END]
-WINDOWS_RANGE = [WINDOWS_LAYER_START, WINDOWS_LAYER_END]
 
 _LANGUAGE_DIMS = {
     "hidden_size": HIDDEN_SIZE,
@@ -69,19 +62,20 @@ def validate_config(data: dict) -> None:
         raise ValueError("v1 transport is cleartext-http with no encryption")
     if data.get("encryption") not in (False, None):
         raise ValueError("v1 does not encrypt hidden states")
+    if "layer_range" in data:
+        raise ValueError("layer_range is assigned by the dispatcher and is not a config field")
+    offload = data.get("offload", "auto")
+    if offload not in {"auto", "force", "disable"}:
+        raise ValueError("offload must be auto, force, or disable")
+    cap = data.get("offload_cap_gb", None)
+    if cap is not None and (isinstance(cap, bool) or not isinstance(cap, (int, float)) or cap < 0):
+        raise ValueError("offload_cap_gb must be a non-negative GiB value or null")
     role = data.get("role")
     engine = data.get("engine")
-    layer_range = data.get("layer_range")
     if role == "mac":
-        if layer_range != MAC_RANGE:
-            raise ValueError(f"Mac layer_range must be [{MAC_LAYER_START}, {MAC_LAYER_END}]")
         if engine not in {"mock", "vllm-metal"}:
             raise ValueError("Mac engine must be mock or vllm-metal")
     elif role == "windows":
-        if layer_range != WINDOWS_RANGE:
-            raise ValueError(
-                f"Windows layer_range must be [{WINDOWS_LAYER_START}, {WINDOWS_LAYER_END}]"
-            )
         if engine not in {"mock", "vllm-cuda"}:
             raise ValueError("Windows engine must be mock or vllm-cuda")
     else:
@@ -106,6 +100,8 @@ def _contract_fields() -> dict:
         "vision_owner": VISION_OWNER,
         "vision_depth": VISION_DEPTH,
         "vision_deepstack_indexes": list(VISION_DEEPSTACK_INDEXES),
+        "offload": "auto",
+        "offload_cap_gb": None,
         "transport": "cleartext-http",
         "encryption": False,
         "health_timeout_s": HEALTH_TIMEOUT_S,
@@ -116,7 +112,6 @@ def mac_config(**overrides) -> dict:
     data = {
         "role": "mac",
         **_contract_fields(),
-        "layer_range": MAC_RANGE,
         "engine": "mock",
         "mode": "auto",
         "host": "0.0.0.0",
@@ -135,7 +130,6 @@ def windows_config(**overrides) -> dict:
     data = {
         "role": "windows",
         **_contract_fields(),
-        "layer_range": WINDOWS_RANGE,
         "engine": "mock",
         "host": "0.0.0.0",
         "kv_port": 7421,

@@ -12,8 +12,8 @@
       <p class="kicker">TokenHub · cleartext layer rpc</p>
       <h1>TokenHub</h1>
       <p class="lede">共享分层推理计算池。</p>
-      <p class="lede">默认 Qwen/Qwen3-VL-8B-Instruct（Hugging Face safetensors，不是 GGUF）。语言塔 36 层对半：Mac 跑 [0, 18)，Windows 跑 [18, 36)。视觉塔是 27 层 ViT，DeepStack 索引 8/16/24，和分词、明文一起留在 Mac。浏览器只下发请求，不跑层计算。</p>
-      <p class="lede">模式 auto 会用约 3 秒检查 Windows。不可达或 single-mac 时进入前半层冒烟（mac_front_half）：Prefill 和 decode 都只跑 Mac 语言层 [0, 18)，输出质量不计。不会为了质量跑满 36 层。dual 在 Windows 掉线时直接失败，不会中途改跑前半层。</p>
+      <p class="lede">默认 Qwen/Qwen3-VL-8B-Instruct（Hugging Face safetensors，不是 GGUF）。语言塔 36 层由调度器按跳分配；两台能力相近的机器常常是 Mac [0, 18)、另一节点 [18, 36)。视觉塔是 27 层 ViT，DeepStack 索引 8/16/24，和分词、明文一起留在 Mac。浏览器只下发请求，不跑层计算。</p>
+      <p class="lede">模式 auto 会用约 3 秒检查其他节点。不可达或 single-mac 时进入前半层冒烟（mac_front_half）：只跑 Mac 语言层 [0, 18)，输出质量不计。同一台 Mac 若要核对后半段，也必须再开一跳，不能一次跑满 36 层。CUDA 显存不够时自动把放不下的权重和 KV 卸到 CPU。dual 在节点不够覆盖 36 层时直接失败。</p>
     </div>
     <p class="transport" id="transport">隐状态走公网明文 RPC，没有加密。</p>
   </header>

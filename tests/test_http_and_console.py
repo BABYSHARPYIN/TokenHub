@@ -73,7 +73,8 @@ def test_console_front_half_and_dual_failure():
         status = json.loads(response.read().decode("utf-8"))
     assert status["model"] == "Qwen/Qwen3-VL-8B-Instruct"
     assert status["mac_layers"] == [0, 18]
-    assert status["windows_layers"] == [18, 36]
+    assert status["windows_layers"] is None
+    assert status["scheduling"] == "dynamic"
     assert status["vision_owner"] == "mac"
     assert status["vision_depth"] == 27
     assert status["vision_deepstack_indexes"] == [8, 16, 24]
