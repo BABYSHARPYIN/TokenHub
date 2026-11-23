@@ -39,41 +39,35 @@ def test_distribution_name_is_tokenhub():
     assert 'name = "pool"' not in text
 
 
-def test_user_facing_launch_uses_tokenhub_script():
-    banned = "python -m pool"
+def test_user_facing_launch_uses_python_m_pool():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "tokenhub --role mac --engine mock" in readme
-    assert "tokenhub --role windows --engine" in readme
-    assert banned not in readme
+    assert "python -m pool --role mac --engine mock" in readme
+    assert "python -m pool --role windows --engine" in readme
+    assert "tokenhub --role" not in readme
+    assert "启动命令是 `python -m pool`" in readme
     for relative in (
-        "pyproject.toml",
         "pool/cli.py",
-        "pool/__init__.py",
         "pool/__main__.py",
-        "pool/agent/static/index.html",
     ):
         text = (ROOT / relative).read_text(encoding="utf-8")
-        assert banned not in text, relative
+        assert "prog=\"tokenhub\"" not in text
+        assert "Start TokenHub with the `tokenhub`" not in text
 
 
-def test_cli_help_uses_tokenhub():
-    import os
+def test_cli_help_uses_python_m_pool():
     import subprocess
+    import sys
 
-    env = os.environ.copy()
-    local_bin = str(Path.home() / ".local" / "bin")
-    env["PATH"] = local_bin + os.pathsep + env.get("PATH", "")
     result = subprocess.run(
-        ["tokenhub", "--help"],
+        [sys.executable, "-m", "pool", "--help"],
         check=False,
         capture_output=True,
         text=True,
-        env=env,
     )
     assert result.returncode == 0, result.stderr
-    assert "usage: tokenhub" in result.stdout
+    assert "usage: python -m pool" in result.stdout
+    assert "usage: tokenhub" not in result.stdout
     assert "TokenHub" in result.stdout
-    assert "python -m pool" not in result.stdout
 
 
 def test_locked_split_and_configs():
