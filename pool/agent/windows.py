@@ -20,7 +20,12 @@ def build_windows_node(config: dict):
     if engine == "vllm-cuda":
         from pool.runtime.vllm_cuda import VllmCudaHiddenStateRunner
 
-        runner = VllmCudaHiddenStateRunner(config["model"], config.get("max_model_len", 512))
+        runner = VllmCudaHiddenStateRunner(
+            config["model"],
+            config.get("max_model_len", 512),
+            offload=config.get("offload", "auto"),
+            offload_cap_gb=config.get("offload_cap_gb"),
+        )
         runner.load()
         return LayerNode("windows", WINDOWS_LAYER_START, WINDOWS_LAYER_END, runner, lm_head=None)
     raise EngineUnavailable("Windows agent accepts mock or vllm-cuda")

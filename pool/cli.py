@@ -12,7 +12,7 @@ from pool.protocol.constants import WINDOWS_LAYER_END, WINDOWS_LAYER_START
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="python -m pool",
-        description="TokenHub local agent。共享分层推理计算池。",
+        description="TokenHub local agent。共享分层推理计算池。层范围由调度器按跳分配；CUDA 显存不够时默认 cpu offload。",
     )
     parser.add_argument("--role", choices=["mac", "windows"], required=True)
     parser.add_argument("--engine", choices=["mock", "vllm-metal", "vllm-cuda"])
@@ -59,7 +59,8 @@ def main(argv: list[str] | None = None) -> None:
     print(f"TokenHub Windows KV  http://{kv_host}:{kv_port}  (cleartext)")
     print(
         f"TokenHub Windows Node http://{node_host}:{node_port}  "
-        f"layers [{WINDOWS_LAYER_START}, {WINDOWS_LAYER_END})"
+        f"language hops assigned by the dispatcher "
+        f"(reference even split [{WINDOWS_LAYER_START}, {WINDOWS_LAYER_END}))"
     )
     print("This process does not tokenize or emit plaintext.")
     try:

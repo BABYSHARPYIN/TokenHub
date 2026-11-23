@@ -22,8 +22,6 @@ from pool.protocol.constants import (
     VISION_DEEPSTACK_INDEXES,
     VISION_DEPTH,
     VISION_OWNER,
-    WINDOWS_LAYER_END,
-    WINDOWS_LAYER_START,
 )
 from pool.rpc.http import HttpKVClient, HttpLayerClient
 from pool.runtime.mock import MockEmbedder
@@ -46,14 +44,17 @@ class MacApp:
 
     def status(self) -> dict:
         peers = self.dispatcher.peer_status()
+        remote = peers.get("remote_hops") or []
+        windows_layers = [remote[0][1], remote[-1][2]] if remote else None
         return {
             "protocol": PROTOCOL,
             "role": "mac",
             "model": self.config["model"],
             "engine": self.config["engine"],
             "mode": self.config["mode"],
-            "mac_layers": [MAC_LAYER_START, MAC_LAYER_END],
-            "windows_layers": [WINDOWS_LAYER_START, WINDOWS_LAYER_END],
+            "scheduling": "dynamic",
+            "mac_layers": peers.get("mac_layers") or [MAC_LAYER_START, MAC_LAYER_END],
+            "windows_layers": windows_layers,
             "vision_owner": VISION_OWNER,
             "vision_depth": VISION_DEPTH,
             "vision_deepstack_indexes": list(VISION_DEEPSTACK_INDEXES),

@@ -4,7 +4,7 @@ TokenHub 是共享分层推理计算池，仓库名是 BABYSHARPYIN/TokenHub。�
 
 默认且唯一的演示模型是 Hugging Face safetensors 检查点 **Qwen/Qwen3-VL-8B-Instruct**（`Qwen3VLForConditionalGeneration`）。这不是 GGUF 仓库 `Qwen/Qwen3-VL-8B-Instruct-GGUF`，也没有 llama.cpp 路径。
 
-语言塔（text tower）共 36 层，对半切开：Mac 固定跑前一半 `[0, 18)`，Windows 固定跑后一半 `[18, 36)`。语言塔宽度按官方 `text_config` 锁死：`hidden_size` 4096，`num_attention_heads` 32，`num_key_value_heads` 8，`head_dim` 128，`intermediate_size` 12288，`vocab_size` 151936，`eos_token_id` 151645。
+语言塔（text tower）共 36 层。每一跳只跑调度器刚分配的一段连续层，跑完把隐状态交回调度器，再要下一跳。下一跳可以是另一台机器，也可以还是同一进程的下一段。两台能力相近的节点常常得到 `[0, 18)` 和 `[18, 36)`，这是调度结果，不是配置文件里的固定切分。语言塔宽度按官方 `text_config` 锁死：`hidden_size` 4096，`num_attention_heads` 32，`num_key_value_heads` 8，`head_dim` 128，`intermediate_size` 12288，`vocab_size` 151936，`eos_token_id` 151645。
 
 视觉塔留在 Mac，和分词器、明文、词嵌入、`lm_head` 在一起。它是深度 27 的 ViT，DeepStack 索引为 8、16、24。DeepStack 索引属于视觉塔，不是语言塔的切分点。Windows 不跑视觉编码，也不保留视觉模块。任何模式（`auto`、`single-mac`、`dual`）都如此。
 
@@ -83,22 +83,28 @@ python -m pool --role mac --engine vllm-metal \
   --max-model-len 512
 ```
 
-`configs/mac.example.json` 和 `configs/windows.example.json` 里写死了同样的端口、模型、语言塔宽度、视觉塔归属和层切分。使用 Mac 配置前，请先把 `WINDOWS_PUBLIC_IP` 换成真实地址。如果还留着占位符，会被当成「未配置 Windows」，`auto` 模式会继续走前半层冒烟。
+`configs/mac.example.json` 和 `configs/windows.example.json` 写了端口、模型、语言塔宽度、视觉塔归属，以及 CUDA 的 `offload`（默认 `auto`）。配置里没有层区间。使用 Mac 配置前，请先把 `WINDOWS_PUBLIC_IP` 换成真实地址。如果还留着占位符，会被当成「未配置 Windows」，`auto` 模式会继续走前半层冒烟。
 
 `auto` 在每次会话开始前会做这些事：
 
-1. 一起探活 Windows KV 和 Windows Node，预算大约 3 秒。
-2. 如果两者都在线，且 Node 报告的层范围是 `[18, 36)`，就走双机路径，`degraded` 为空。
-3. 若请求带图像，Mac 先做视觉编码。Mac 再对问题做词嵌入，跑语言塔 Prefill `[0, 18)`，然后由 Windows 跑 Prefill `[18, 36)`。各层 KV 都存在 Windows 上。双机 Prefill 不会改成在 Mac 上跑满 36 层语言塔。
-4. Mac 对语言塔最后一层（索引 35）的隐状态做最终 norm 和 `lm_head`，然后采样。
-5. 解码阶段按同样的对半步骤重复。Windows 只看到 float32 激活和 KV，看不到问题原文、图像或 token id。
+1. 探活 KV 和其他节点，预算大约 3 秒。节点上报的是能力（引擎、显存、是否允许 offload），不是一份写死的层表。
+2. 如果在线节点的容量够覆盖全部 36 层，就按显存排出若干连续、互不重叠的跳。能力相近的两台机器通常仍是 Mac `[0, 18)`、另一节点 `[18, 36)`，`degraded` 为空。显存更小的机器会分到更短的一段。
+3. 每一跳只把当前这段层交给对应节点。节点把隐状态交回调度器，调度器再给出下一跳。Prefill 和 decode 都是这个状态机，不是写死的「先 Mac 再 Windows」两跳。
+4. 若请求带图像，视觉编码留在 Mac。词嵌入也在 Mac。语言塔最后一层的隐状态回到 Mac，做最终 norm 和 `lm_head`，然后采样。
+5. 其他节点只看到 float32 激活和 KV，看不到问题原文、图像或 token id。
 
-双机会话一旦已经按全语言塔开始，中途 Windows 掉线，该会话失败并删除 KV。调度器不会在中途改成前半层。
+同一台 Mac 可以分两跳核对整座语言塔：先 `[0, 18)`，下一跳再把 `[18, 36)` 分回这台 Mac。这仍然是两次按段前向，不是一次把 36 层塞进同一次引擎调用。这种只在 Mac 上跑完的核对仍然标成输出质量不计。
+
+`mode=single-mac`，或 `auto` 但没有足够节点覆盖 36 层时，Mac 只跑它能托管的前缀（现在是前半 `[0, 18)`），`degraded` 为 `mac_front_half`，控制台写明输出质量不计。`mode=dual` 而节点不够覆盖 36 层时，会话直接失败。
+
+已经按全语言塔开始的会话，若当前这一跳的节点中途掉线，该请求失败并删除 KV。调度器不会在一跳执行到一半时改派。节点加入或离开之后，下一跳边界或下一次会话才会重新分配。
+
+CUDA 节点如果装不下分配到的语言层权重和必要的 KV，会自动设置 vLLM 的 `cpu_offload_gb` 和 `swap_space`，把放不下的部分放进 CPU 内存，并在日志里写明进入 memory-offload、速度会变慢。模型仍是同一份 safetensors，不会改成量化或更少的层。连一层计算加最小工作集都放不进 GPU 时，启动失败。`offload` 可设为 `auto`（默认）、`force` 或 `disable`，`offload_cap_gb` 可限制卸出的 GiB。vllm-metal 使用统一内存，不做这种显存到内存的降级，只打一行说明。
 
 ## 3. 风险
 
 - **不做加密。** 层激活和 KV 在公网上明文传输。能读到这些数据包的人就能读到隐状态。第一版不加 TLS、不加鉴权，也不加加密信封。
-- **前半层输出质量不作数。** `mac_front_half` 只跑语言塔 `[0, 18)`，再用 `lm_head` 投影这些隐状态。这是链路冒烟，不是 36 层完整答案。Mac 代理也不会悄悄跑完全部 36 层语言塔，把文本弄得看起来更好。
+- **前半层输出质量不作数。** `mac_front_half` 只跑语言塔前缀 `[0, 18)`，再用 `lm_head` 投影这些隐状态。只在 Mac 上分两跳核对整塔时，输出质量同样不计。两种路径都不会把 36 层合成一次引擎调用。
 - **视觉塔不跨机。** 27 层 ViT 和 DeepStack 8/16/24 只留在 Mac。Windows 导出语言层之后会卸掉视觉模块。
 - **需要 macOS 15 或更新。** Mac 的真实引擎是 vllm-metal（vLLM 的 API/调度 + MLX/Metal）。请使用 macOS 15 或更新系统。mock 引擎在哪里都能跑。
 - **需要 WSL2。** Windows 的真实引擎是 CUDA vLLM。请在能看到 NVIDIA 显卡的 WSL2 里运行，并自行放行 `7421` 和 `7422`。本项目不提供 Windows 原生应用。

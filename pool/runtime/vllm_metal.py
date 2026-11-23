@@ -12,6 +12,7 @@ from pool.errors import EngineUnavailable, LayerRangeError
 from pool.protocol.constants import MAC_LAYER_END, MAC_LAYER_START, MODEL_NAME
 from pool.runtime.engine_load import construct_engine
 from pool.runtime.extract import find_vision_module
+from pool.runtime.offload import skip_metal_offload
 from pool.runtime.runner import HiddenStateRunner
 
 
@@ -26,8 +27,10 @@ class VllmMetalHiddenStateRunner(HiddenStateRunner):
         self.max_model_len = max_model_len
         self.engine = None
         self.vision = None
+        self.offload_plan = None
 
     def load(self) -> "VllmMetalHiddenStateRunner":
+        self.offload_plan = skip_metal_offload()
         try:
             import mlx.core  # noqa: F401
         except Exception as exc:

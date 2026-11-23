@@ -38,6 +38,14 @@ class HiddenStateRunner:
         self.final_norm = None
         self.lm_weight = None
 
+    def assign_range(self, layer_start: int, layer_end: int) -> None:
+        if layer_end <= layer_start:
+            raise LayerRangeError("runner range is empty")
+        if layer_start == 0 and layer_end >= self.spec.num_layers:
+            raise LayerRangeError("runner refuses a full-tower engine call")
+        self.layer_start = layer_start
+        self.layer_end = layer_end
+
     def bind_module(self, module) -> None:
         self.layers = export_range(module, self.layer_start, self.layer_end, self.spec)
         if self.role == "mac":
