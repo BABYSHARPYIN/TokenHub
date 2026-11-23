@@ -1,20 +1,20 @@
 # 共享分层推理计算池
 
-v1 layered inference pool. Python package name: `pool`.
+第一版分层推理计算池。Python 包名是 `pool`。
 
-The only model is quantized **Qwen2.5-7B-Instruct**, 28 layers. Mac always runs layers `[0, 14)`. Windows always runs layers `[14, 28)`. Tokenizer, plaintext, embeddings, `lm_head`, sampling, and answer/thinking assembly stay on Mac. Windows never tokenizes, detokenizes, or emits plaintext.
+默认且唯一的演示模型是量化的 **Qwen2.5-7B-Instruct**，共 28 层。Mac 固定跑前一半层 `[0, 14)`，Windows 固定跑后一半层 `[14, 28)`。分词、明文、词嵌入、`lm_head`、采样，以及答案和思维链组装，都只留在 Mac。Windows 不得分词、解码，也不得输出明文。
 
-Hidden states and KV travel over cleartext HTTP. v1 does not encrypt them, bill for them, or authenticate tenants.
+隐状态和 KV 通过明文 HTTP 传输。第一版不做加密、不计费，也不做多租户鉴权。
 
-The browser is a console. A local agent on each machine does the work. The browser does not run layer compute. vllm-metal (Mac) and CUDA vLLM (Windows / WSL2) are engines only. `HiddenStateRunner` hooks decoder internals for a layer range. It does not call `vllm` chat, `LLM.generate`, or OpenAI chat completions.
+浏览器只是控制台。各端本机的轻量代理负责真正的计算。浏览器不承担分层解码。Mac 引擎是 vllm-metal，Windows / WSL2 引擎是 CUDA vLLM，它们只是引擎，不是整套平台。`HiddenStateRunner` 钩住解码器内部，按层区间做前向，不会调用 `vllm` 的 chat、`LLM.generate`，也不会走 OpenAI 风格的 chat completions。
 
-Default `pytest` uses the mock engine and needs no GPU.
+默认 `pytest` 使用 mock 引擎，不需要 GPU。
 
-## 1. Mac single-machine 7B smoke
+## 1. Mac 单机 7B 冒烟
 
-This path is the one to run first. It does not need the Windows machine.
+请先跑这条路径，不需要 Windows。
 
-Mock engine (no weights, proves the console and the front-half fallback):
+mock 引擎（不加载权重，用来验证控制台和前半层降级）：
 
 ```bash
 python3 -m venv .venv
@@ -23,20 +23,20 @@ pip install -e ".[dev]"
 python -m pool --role mac --engine mock --host 127.0.0.1 --port 7410 --mode auto
 ```
 
-Open http://127.0.0.1:7410 . Leave mode on `auto` or choose `single-mac`, then send a prompt.
+打开 http://127.0.0.1:7410 。模式保持 `auto`，或改成 `single-mac`，然后提交一个问题。
 
-Windows is not configured, so the session is front-half smoke:
+未配置 Windows 时，会话会走前半层冒烟：
 
-- `degraded` is `mac_front_half`
-- the console says this is front-half smoke and that output quality does not count
-- prefill and decode run only Mac layers `[0, 14)`
-- KV stays in memory on the Mac
-- sampling applies `lm_head` to those front-half hidden states
-- layers `[14, 28)` do not run, and the agent does not call a full-model chat API
+- `degraded` 为 `mac_front_half`
+- 控制台会标明这是前半层冒烟，输出质量不作数
+- Prefill 和 decode 都只跑 Mac 的 `[0, 14)`
+- KV 写在 Mac 本机内存里
+- 采样是把 `lm_head` 用在这些前半层隐状态上
+- 不会跑 `[14, 28)`，也不会调用完整模型的 chat API
 
-The mock engine's tokens are a UTF-8 stand-in, not the Qwen vocabulary. The banner still applies.
+mock 引擎产出的 token 只是 UTF-8 占位，不是 Qwen 词表。上面的提示同样适用。
 
-Real 7B smoke (Apple Silicon, macOS 15 or newer, vllm-metal installed):
+真实 7B 冒烟（Apple Silicon、macOS 15 或更新，并已安装 vllm-metal）：
 
 ```bash
 pip install -e ".[metal]"
@@ -44,15 +44,15 @@ python -m pool --role mac --engine vllm-metal --model Qwen/Qwen2.5-7B-Instruct \
   --host 127.0.0.1 --port 7410 --mode auto --max-model-len 512
 ```
 
-Same console contract: with Windows unreachable, `auto` and `single-mac` stay on layers `[0, 14)`. Do not expect coherent 7B answers from this path. A 16 GB Mac is tight if vLLM also allocates its own cache; `--max-model-len 512` keeps that cache small. The pool still only *executes* the front half.
+控制台约定相同：Windows 不可达时，`auto` 和 `single-mac` 都只跑 `[0, 14)`。不要指望这条路径给出完整 7B 的通顺回答。如果 vLLM 还要给自己分配缓存，16 GB 的 Mac 会比较紧；`--max-model-len 512` 可以把那份缓存压小。计算池实际执行的仍然只是前半层。
 
-`mode=dual` with Windows down fails the session. It does not silently switch to front-half.
+`mode=dual` 且 Windows 不通时，会话直接失败，不会悄悄改成前半层。
 
-## 2. Mac + Windows/WSL2 dual-machine (half and half)
+## 2. Mac + Windows/WSL2 双机对半
 
-Windows node and KV run inside WSL2 so CUDA vLLM can see the NVIDIA GPU. Publish two cleartext ports from WSL2 to the Windows host's public address (example: `7421` for KV, `7422` for the layer node). There is no tunnel encryption in v1.
+Windows 的 Node 和 KV 跑在 WSL2 里，以便 CUDA vLLM 能用到 NVIDIA 显卡。请自行把两个明文端口从 WSL2 映射到 Windows 宿主机的公网地址（示例：KV 用 `7421`，层节点用 `7422`）。第一版没有隧道加密。
 
-On the Windows / WSL2 side:
+在 Windows / WSL2 上：
 
 ```bash
 python -m pool --role windows --engine vllm-cuda \
@@ -61,9 +61,9 @@ python -m pool --role windows --engine vllm-cuda \
   --max-model-len 512
 ```
 
-Mock the Windows half first if the GPU stack is not ready yet: replace `--engine vllm-cuda` with `--engine mock`.
+如果 GPU 栈还没就绪，可以先把 `--engine vllm-cuda` 换成 `--engine mock`，用 mock 跑 Windows 这一半。
 
-On the Mac:
+在 Mac 上：
 
 ```bash
 python -m pool --role mac --engine vllm-metal \
@@ -75,38 +75,38 @@ python -m pool --role mac --engine vllm-metal \
   --max-model-len 512
 ```
 
-`configs/mac.example.json` and `configs/windows.example.json` freeze the same ports, model, and layer ranges. Replace `WINDOWS_PUBLIC_IP` before using the Mac file. A leftover placeholder is treated as "Windows not configured", so `auto` stays on front-half smoke.
+`configs/mac.example.json` 和 `configs/windows.example.json` 里写死了同样的端口、模型和层切分。使用 Mac 配置前，请先把 `WINDOWS_PUBLIC_IP` 换成真实地址。如果还留着占位符，会被当成「未配置 Windows」，`auto` 模式会继续走前半层冒烟。
 
-What `auto` does before a session:
+`auto` 在每次会话开始前会做这些事：
 
-1. Health-check Windows KV and the Windows node together, budget about 3 seconds.
-2. If both are up and the node reports layers `[14, 28)`, run the dual path. `degraded` is empty.
-3. Mac embeds the prompt, runs prefill `[0, 14)`, then Windows runs prefill `[14, 28)`. KV for every layer is stored on Windows.
-4. Mac applies the final norm and `lm_head` to the layer-27 hidden state and samples.
-5. Decode repeats that half-and-half step. Windows sees float32 activations and KV, never the prompt string or token ids.
+1. 一起探活 Windows KV 和 Windows Node，预算大约 3 秒。
+2. 如果两者都在线，且 Node 报告的层范围是 `[14, 28)`，就走双机路径，`degraded` 为空。
+3. Mac 对问题做词嵌入，先跑 Prefill `[0, 14)`，再由 Windows 跑 Prefill `[14, 28)`。各层 KV 都存在 Windows 上。
+4. Mac 对第 27 层的隐状态做最终 norm 和 `lm_head`，然后采样。
+5. 解码阶段按同样的对半步骤重复。Windows 只看到 float32 激活和 KV，看不到问题原文或 token id。
 
-If a dual session has already started and Windows drops, the session fails and its KV is deleted. The dispatcher does not switch to front-half in the middle of that session.
+双机会话一旦已经按全层开始，中途 Windows 掉线，该会话失败并删除 KV。调度器不会在中途改成前半层。
 
-## 3. Risks
+## 3. 风险
 
-- **No encryption.** Layer activations and KV cross the public internet in the clear. Anyone who can read the packets can read the hidden states. v1 does not add TLS, authentication, or a crypto envelope.
-- **Front-half quality does not count.** `mac_front_half` runs only layers `[0, 14)` and projects those hidden states with `lm_head`. It is a pipeline smoke test. It is not a 28-layer answer, and the Mac agent will not quietly run all 28 layers to make the text look better.
-- **macOS 15+.** The real Mac engine is vllm-metal (vLLM's API/scheduler plus MLX/Metal). Plan on macOS 15 or newer. The mock engine runs anywhere.
-- **WSL2.** The real Windows engine is CUDA vLLM. Run it in WSL2 with the NVIDIA GPU visible, and publish ports `7421` and `7422` yourself. The pool does not ship a Windows-native app.
-- **No chat-API fakery.** Neither engine has a stock call that executes a layer range on external hidden states and writes KV to this store. The adapters locate decoder modules and run the range. If the engine cannot be hooked, startup fails. It does not fall back to `LLM.generate`, `LLM.chat`, or `/v1/chat/completions`.
-- **Not zero-knowledge.** Windows does not see plaintext, but hidden states are a function of the prompt. Possession of the states plus the same weights can still leak information.
-- **Memory.** vLLM may allocate its own paged cache for the full model at load even though the pool executes only one half and stores KV outside the engine. Drop unused depth only after load; a 16 GB Mac can still run out of memory.
+- **不做加密。** 层激活和 KV 在公网上明文传输。能读到这些数据包的人就能读到隐状态。第一版不加 TLS、不加鉴权，也不加加密信封。
+- **前半层输出质量不作数。** `mac_front_half` 只跑 `[0, 14)`，再用 `lm_head` 投影这些隐状态。这是链路冒烟，不是 28 层完整答案。Mac 代理也不会悄悄跑完全部 28 层，把文本弄得看起来更好。
+- **需要 macOS 15 或更新。** Mac 的真实引擎是 vllm-metal（vLLM 的 API/调度 + MLX/Metal）。请使用 macOS 15 或更新系统。mock 引擎在哪里都能跑。
+- **需要 WSL2。** Windows 的真实引擎是 CUDA vLLM。请在能看到 NVIDIA 显卡的 WSL2 里运行，并自行放行 `7421` 和 `7422`。本项目不提供 Windows 原生应用。
+- **禁止用 chat API 假装分层。** 两个引擎都没有现成接口，能按层区间对外部隐状态做前向，并把 KV 写到本项目的存储里。适配器会定位解码模块并只跑指定区间。如果钩不住引擎，启动就失败，不会退回到 `LLM.generate`、`LLM.chat` 或 `/v1/chat/completions`。
+- **不是零知识。** Windows 看不到明文，但隐状态是由问题计算出来的。同时掌握隐状态和同一套权重时，仍可能泄露信息。
+- **显存和内存。** 即便计算池只执行一半层、并把 KV 存在引擎之外，vLLM 加载时仍可能按整模分配自己的 paged cache。未使用的层深只能在加载后再裁。16 GB 的 Mac 仍可能内存不够。
 
-## Development
+## 开发
 
 ```bash
 pip install -e ".[dev]"
 pytest
 ```
 
-Required coverage without a GPU:
+无 GPU 时必须覆盖：
 
-- `tests/test_dispatcher_mock_loop.py` — full dual mock, no plaintext on the Windows payload, `degraded == ""`
-- `tests/test_dispatcher_single_mac_fallback.py` — Windows down or `single-mac` uses only Mac `[0, 14)`, local KV, `degraded == "mac_front_half"`; `mode=dual` with Windows down fails; a mid-session drop fails and cleans KV
+- `tests/test_dispatcher_mock_loop.py`：完整双机 mock 路径，发给 Windows 的内容不含明文，`degraded == ""`
+- `tests/test_dispatcher_single_mac_fallback.py`：Windows 不通或 `single-mac` 时，只跑 Mac `[0, 14)`，使用本机 KV，`degraded == "mac_front_half"`；`mode=dual` 且 Windows 不通时会话失败；中途掉线会失败并清理 KV
 
-Real vllm-metal / CUDA tests are skipped or fail closed when those stacks are absent. No model weights are downloaded by the default suite.
+真实的 vllm-metal / CUDA 测试在缺少对应环境时会跳过，或在加载失败时直接报错，而不会假装成功。默认测试套件不会下载模型权重。
